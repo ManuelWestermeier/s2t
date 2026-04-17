@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Speech-to-Text (DE + Namen Fix)</title>
+<title>Whisper STT Lokal (DE)</title>
 <style>
   body { font-family: Arial; padding: 20px; }
   button { padding: 10px 20px; margin-right: 10px; }
@@ -11,78 +11,78 @@
 </head>
 <body>
 
-<h2>Speech-to-Text (Deutsch)</h2>
+<h2>Lokales Speech-to-Text (Whisper WASM)</h2>
 
-<button id="start">Start</button>
-<button id="stop">Stop</button>
+<button id="start">Start Aufnahme</button>
+<button id="stop">Stop + Transkribieren</button>
 
+<div id="status">Lade Modell...</div>
 <div id="output"></div>
 
-<script>
+<script type="module">
+import init, { Whisper } from "https://cdn.jsdelivr.net/npm/whisper.cpp@latest/dist/whisper.js";
+
+let whisper;
+let mediaRecorder;
+let audioChunks = [];
+
+const status = document.getElementById("status");
 const output = document.getElementById("output");
 
-// Korrekturliste (anpassen!)
-const corrections = {
-  "manuel westheimer": "Manuel Westermeier",
-  "westermeyer": "Westermeier",
-  "westermayer": "Westermeier",
-  "sebastiane": "Sebastian",
-  "münschen": "München"
+async function loadModel() {
+  await init();
+  whisper = new Whisper();
+
+  // Modell laden (lokale Datei!)
+  await whisper.loadModel("ggml-base.bin");
+
+  status.innerText = "Modell geladen";
+}
+
+async function startRecording() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mediaRecorder = new MediaRecorder(stream);
+
+  audioChunks = [];
+
+  mediaRecorder.ondataavailable = e => {
+    audioChunks.push(e.data);
+  };
+
+  mediaRecorder.start();
+  status.innerText = "Aufnahme läuft...";
+}
+
+async function stopRecording() {
+  return new Promise(resolve => {
+    mediaRecorder.onstop = resolve;
+    mediaRecorder.stop();
+  });
+}
+
+async function transcribe() {
+  const blob = new Blob(audioChunks, { type: "audio/webm" });
+  const arrayBuffer = await blob.arrayBuffer();
+
+  status.innerText = "Transkribiere...";
+
+  const result = await whisper.transcribe(arrayBuffer, {
+    language: "de",
+    prompt: "Namen: Manuel Westermeier, Sebastian, München, Traunstein"
+  });
+
+  output.innerText = result.text;
+  status.innerText = "Fertig";
+}
+
+document.getElementById("start").onclick = startRecording;
+
+document.getElementById("stop").onclick = async () => {
+  await stopRecording();
+  await transcribe();
 };
 
-function fixText(text) {
-  let result = text;
-  for (const wrong in corrections) {
-    const regex = new RegExp(wrong, "gi");
-    result = result.replace(regex, corrections[wrong]);
-  }
-  return result;
-}
-
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-if (!SpeechRecognition) {
-  output.innerText = "SpeechRecognition wird nicht unterstützt.";
-} else {
-  const recognition = new SpeechRecognition();
-
-  recognition.lang = "de-DE";
-  recognition.continuous = true;
-  recognition.interimResults = true;
-
-  let finalText = "";
-
-  recognition.onresult = (event) => {
-    let interim = "";
-
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcript = event.results[i][0].transcript;
-
-      if (event.results[i].isFinal) {
-        finalText += transcript + " ";
-      } else {
-        interim += transcript;
-      }
-    }
-
-    const fixed = fixText(finalText + interim);
-    output.innerText = fixed;
-  };
-
-  recognition.onerror = (e) => {
-    output.innerText += "\nFehler: " + e.error;
-  };
-
-  document.getElementById("start").onclick = () => {
-    finalText = "";
-    output.innerText = "";
-    recognition.start();
-  };
-
-  document.getElementById("stop").onclick = () => {
-    recognition.stop();
-  };
-}
+loadModel();
 </script>
 
 </body>
