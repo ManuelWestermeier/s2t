@@ -2,87 +2,146 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Whisper STT Lokal (DE)</title>
+<title>Whisper + Silben/Namen Fix</title>
 <style>
-  body { font-family: Arial; padding: 20px; }
-  button { padding: 10px 20px; margin-right: 10px; }
-  #output { margin-top: 20px; font-size: 18px; white-space: pre-wrap; }
+body { font-family: Arial; padding: 20px; }
+button { padding: 10px 20px; margin-right: 10px; }
+#output { margin-top: 20px; white-space: pre-wrap; font-size: 18px; }
+#status { margin-top: 10px; }
 </style>
 </head>
 <body>
 
-<h2>Lokales Speech-to-Text (Whisper WASM)</h2>
+<h2>Speech-to-Text (Silben-/Namenrobust)</h2>
 
-<button id="start">Start Aufnahme</button>
-<button id="stop">Stop + Transkribieren</button>
+<button id="start">Start</button>
+<button id="stop">Stop + Analyse</button>
 
-<div id="status">Lade Modell...</div>
+<div id="status">Init...</div>
 <div id="output"></div>
 
 <script type="module">
 import init, { Whisper } from "https://cdn.jsdelivr.net/npm/whisper.cpp@latest/dist/whisper.js";
 
 let whisper;
-let mediaRecorder;
-let audioChunks = [];
+let recorder;
+let chunks = [];
 
 const status = document.getElementById("status");
 const output = document.getElementById("output");
 
-async function loadModel() {
+const nameLexicon = [
+  "manuel westermeier",
+  "sebastian",
+  "münchen",
+  "traunstein"
+];
+
+// einfache phonem-/silbenähnliche Normalisierung
+function normalize(text) {
+  return text
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// fuzzy match (Levenshtein vereinfacht)
+function similarity(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, () =>
+    Array(b.length + 1).fill(0)
+  );
+
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+
+  return 1 - dp[a.length][b.length] / Math.max(a.length, b.length);
+}
+
+function correctNames(text) {
+  let norm = normalize(text);
+
+  for (const name of nameLexicon) {
+    const n = normalize(name);
+
+    if (norm.includes(n)) continue;
+
+    if (similarity(norm, n) > 0.75) {
+      const regex = new RegExp(n.split(" ").join("\\s*"), "gi");
+      text = text.replace(regex, name);
+    }
+  }
+
+  return text;
+}
+
+async function initModel() {
   await init();
   whisper = new Whisper();
-
-  // Modell laden (lokale Datei!)
-  await whisper.loadModel("ggml-base.bin");
-
+  await whisper.loadModel("ggml-small.bin");
   status.innerText = "Modell geladen";
 }
 
-async function startRecording() {
+async function start() {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  mediaRecorder = new MediaRecorder(stream);
+  recorder = new MediaRecorder(stream);
+  chunks = [];
 
-  audioChunks = [];
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.start();
 
-  mediaRecorder.ondataavailable = e => {
-    audioChunks.push(e.data);
-  };
-
-  mediaRecorder.start();
-  status.innerText = "Aufnahme läuft...";
+  status.innerText = "Aufnahme läuft";
 }
 
-async function stopRecording() {
+async function stop() {
   return new Promise(resolve => {
-    mediaRecorder.onstop = resolve;
-    mediaRecorder.stop();
+    recorder.onstop = resolve;
+    recorder.stop();
   });
 }
 
 async function transcribe() {
-  const blob = new Blob(audioChunks, { type: "audio/webm" });
-  const arrayBuffer = await blob.arrayBuffer();
+  const blob = new Blob(chunks, { type: "audio/webm" });
+  const buffer = await blob.arrayBuffer();
 
-  status.innerText = "Transkribiere...";
+  status.innerText = "Analyse...";
 
-  const result = await whisper.transcribe(arrayBuffer, {
+  const result = await whisper.transcribe(buffer, {
     language: "de",
-    prompt: "Namen: Manuel Westermeier, Sebastian, München, Traunstein"
+    prompt: "Silben, Namen: Manuel Westermeier, Sebastian, München, Traunstein"
   });
 
-  output.innerText = result.text;
-  status.innerText = "Fertig";
+  let text = result.text;
+
+  // zweite Stufe: phonem-/silbenbasierte Korrektur
+  text = correctNames(text);
+
+  output.innerText = text;
+  status.innerText = "fertig";
 }
 
-document.getElementById("start").onclick = startRecording;
+document.getElementById("start").onclick = start;
 
 document.getElementById("stop").onclick = async () => {
-  await stopRecording();
+  await stop();
   await transcribe();
 };
 
-loadModel();
+initModel();
 </script>
 
 </body>
