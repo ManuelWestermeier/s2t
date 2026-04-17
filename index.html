@@ -1,65 +1,68 @@
 <!doctype html>
-<html lang="de">
+<html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Live Speech to Text (DE)</title>
+  <title>Whisper Live DE</title>
   <style>
     body { font-family: sans-serif; margin: 20px; }
     #out { white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; min-height: 200px; }
-    button { margin-right: 10px; padding: 10px; }
+    button { padding: 10px; margin-right: 10px; }
   </style>
 </head>
 <body>
 
-<h3>Live Speech-to-Text (Deutsch)</h3>
+<h3>Whisper (lokal im Browser)</h3>
 
 <button onclick="start()">Start</button>
 <button onclick="stop()">Stop</button>
 
 <div id="out"></div>
 
-<script>
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+<script type="module">
+import { pipeline } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
 
-if (!SpeechRecognition) {
-  document.getElementById("out").textContent =
-    "Browser unterstützt keine SpeechRecognition API.";
+let recorder;
+let chunks = [];
+let transcriber;
+
+async function init() {
+  transcriber = await pipeline(
+    "automatic-speech-recognition",
+    "Xenova/whisper-tiny"
+  );
 }
 
-let rec;
-let finalText = "";
+await init();
 
-function start() {
-  rec = new SpeechRecognition();
-  rec.lang = "de-DE";
-  rec.continuous = true;
-  rec.interimResults = true;
+async function start() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  recorder = new MediaRecorder(stream);
 
-  rec.onresult = (event) => {
-    let interim = "";
+  recorder.ondataavailable = e => chunks.push(e.data);
 
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const txt = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalText += txt + "\n";
-      } else {
-        interim += txt;
-      }
-    }
+  recorder.onstop = async () => {
+    const blob = new Blob(chunks, { type: "audio/webm" });
+    chunks = [];
 
-    document.getElementById("out").textContent = finalText + interim;
+    const arrayBuffer = await blob.arrayBuffer();
+
+    const result = await transcriber(arrayBuffer, {
+      language: "german",
+      task: "transcribe"
+    });
+
+    document.getElementById("out").textContent += result.text + "\n";
+
+    if (recorder) recorder.start();
   };
 
-  rec.onerror = (e) => {
-    console.log("Error:", e);
-  };
-
-  rec.start();
+  recorder.start();
+  setTimeout(() => recorder.stop(), 4000);
 }
 
 function stop() {
-  if (rec) rec.stop();
+  if (recorder) recorder.stop();
+  recorder = null;
 }
 </script>
 
