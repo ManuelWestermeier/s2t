@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Speech to Text (DE)</title>
+<style>
+  body { font-family: Arial; padding: 20px; }
+  button { padding: 10px 20px; margin-right: 10px; }
+  #output { margin-top: 20px; font-size: 18px; }
+</style>
+</head>
+<body>
+
+<h2>Speech-to-Text (Deutsch)</h2>
+
+<button id="start">Start</button>
+<button id="stop">Stop</button>
+
+<div id="output"></div>
+
+<script>
+const output = document.getElementById("output");
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (!SpeechRecognition) {
+  output.innerText = "Browser unterstützt keine SpeechRecognition API.";
+} else {
+  const recognition = new SpeechRecognition();
+
+  recognition.lang = "de-DE";
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  let finalText = "";
+
+  recognition.onresult = (event) => {
+    let interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalText += transcript + " ";
+      } else {
+        interim += transcript;
+      }
+    }
+    output.innerText = finalText + interim;
+  };
+
+  recognition.onerror = (e) => {
+    output.innerText += "\nFehler: " + e.error;
+  };
+
+  document.getElementById("start").onclick = () => {
+    finalText = "";
+    recognition.start();
+  };
+
+  document.getElementById("stop").onclick = () => {
+    recognition.stop();
+  };
+}
+</script>
+
+</body>
+</html>
