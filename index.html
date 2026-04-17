@@ -1,147 +1,66 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>Whisper + Silben/Namen Fix</title>
-<style>
-body { font-family: Arial; padding: 20px; }
-button { padding: 10px 20px; margin-right: 10px; }
-#output { margin-top: 20px; white-space: pre-wrap; font-size: 18px; }
-#status { margin-top: 10px; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Speech to Text (DE)</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    #out { white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; min-height: 200px; }
+    button { margin-right: 10px; padding: 10px; }
+  </style>
 </head>
 <body>
 
-<h2>Speech-to-Text (Silben-/Namenrobust)</h2>
+<h3>Live Speech-to-Text (Deutsch)</h3>
 
-<button id="start">Start</button>
-<button id="stop">Stop + Analyse</button>
+<button onclick="start()">Start</button>
+<button onclick="stop()">Stop</button>
 
-<div id="status">Init...</div>
-<div id="output"></div>
+<div id="out"></div>
 
-<script type="module">
-import init, { Whisper } from "https://cdn.jsdelivr.net/npm/whisper.cpp@latest/dist/whisper.js";
+<script>
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-let whisper;
-let recorder;
-let chunks = [];
-
-const status = document.getElementById("status");
-const output = document.getElementById("output");
-
-const nameLexicon = [
-  "manuel westermeier",
-  "sebastian",
-  "münchen",
-  "traunstein"
-];
-
-// einfache phonem-/silbenähnliche Normalisierung
-function normalize(text) {
-  return text
-    .toLowerCase()
-    .replace(/ä/g, "ae")
-    .replace(/ö/g, "oe")
-    .replace(/ü/g, "ue")
-    .replace(/ß/g, "ss")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+if (!SpeechRecognition) {
+  document.getElementById("out").textContent =
+    "Browser unterstützt keine SpeechRecognition API.";
 }
 
-// fuzzy match (Levenshtein vereinfacht)
-function similarity(a, b) {
-  const dp = Array.from({ length: a.length + 1 }, () =>
-    Array(b.length + 1).fill(0)
-  );
+let rec;
+let finalText = "";
 
-  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
-  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+function start() {
+  rec = new SpeechRecognition();
+  rec.lang = "de-DE";
+  rec.continuous = true;
+  rec.interimResults = true;
 
-  for (let i = 1; i <= a.length; i++) {
-    for (let j = 1; j <= b.length; j++) {
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
-      );
+  rec.onresult = (event) => {
+    let interim = "";
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const txt = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalText += txt + "\n";
+      } else {
+        interim += txt;
+      }
     }
-  }
 
-  return 1 - dp[a.length][b.length] / Math.max(a.length, b.length);
+    document.getElementById("out").textContent = finalText + interim;
+  };
+
+  rec.onerror = (e) => {
+    console.log("Error:", e);
+  };
+
+  rec.start();
 }
 
-function correctNames(text) {
-  let norm = normalize(text);
-
-  for (const name of nameLexicon) {
-    const n = normalize(name);
-
-    if (norm.includes(n)) continue;
-
-    if (similarity(norm, n) > 0.75) {
-      const regex = new RegExp(n.split(" ").join("\\s*"), "gi");
-      text = text.replace(regex, name);
-    }
-  }
-
-  return text;
+function stop() {
+  if (rec) rec.stop();
 }
-
-async function initModel() {
-  await init();
-  whisper = new Whisper();
-  await whisper.loadModel("ggml-small.bin");
-  status.innerText = "Modell geladen";
-}
-
-async function start() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  recorder = new MediaRecorder(stream);
-  chunks = [];
-
-  recorder.ondataavailable = e => chunks.push(e.data);
-  recorder.start();
-
-  status.innerText = "Aufnahme läuft";
-}
-
-async function stop() {
-  return new Promise(resolve => {
-    recorder.onstop = resolve;
-    recorder.stop();
-  });
-}
-
-async function transcribe() {
-  const blob = new Blob(chunks, { type: "audio/webm" });
-  const buffer = await blob.arrayBuffer();
-
-  status.innerText = "Analyse...";
-
-  const result = await whisper.transcribe(buffer, {
-    language: "de",
-    prompt: "Silben, Namen: Manuel Westermeier, Sebastian, München, Traunstein"
-  });
-
-  let text = result.text;
-
-  // zweite Stufe: phonem-/silbenbasierte Korrektur
-  text = correctNames(text);
-
-  output.innerText = text;
-  status.innerText = "fertig";
-}
-
-document.getElementById("start").onclick = start;
-
-document.getElementById("stop").onclick = async () => {
-  await stop();
-  await transcribe();
-};
-
-initModel();
 </script>
 
 </body>
