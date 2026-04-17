@@ -1,8 +1,8 @@
 <!doctype html>
-<html>
+<html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <title>Whisper Live DE</title>
+  <meta charset="utf-8">
+  <title>Live STT DE</title>
   <style>
     body { font-family: sans-serif; margin: 20px; }
     #out { white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; min-height: 200px; }
@@ -11,58 +11,62 @@
 </head>
 <body>
 
-<h3>Whisper (lokal im Browser)</h3>
-
 <button onclick="start()">Start</button>
 <button onclick="stop()">Stop</button>
 
 <div id="out"></div>
 
-<script type="module">
-import { pipeline } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
+<script>
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-let recorder;
-let chunks = [];
-let transcriber;
-
-async function init() {
-  transcriber = await pipeline(
-    "automatic-speech-recognition",
-    "Xenova/whisper-tiny"
-  );
+if (!SR) {
+  document.getElementById("out").textContent = "SpeechRecognition nicht verfügbar (nur Chrome/Edge).";
 }
 
-await init();
+let rec;
+let finalText = "";
 
-async function start() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  recorder = new MediaRecorder(stream);
+function start() {
+  rec = new SR();
+  rec.lang = "de-DE";
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
 
-  recorder.ondataavailable = e => chunks.push(e.data);
+  rec.onresult = (e) => {
+    let interim = "";
 
-  recorder.onstop = async () => {
-    const blob = new Blob(chunks, { type: "audio/webm" });
-    chunks = [];
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
 
-    const arrayBuffer = await blob.arrayBuffer();
+      if (e.results[i].isFinal) {
+        finalText += t.trim() + "\n";
+      } else {
+        interim += t;
+      }
+    }
 
-    const result = await transcriber(arrayBuffer, {
-      language: "german",
-      task: "transcribe"
-    });
-
-    document.getElementById("out").textContent += result.text + "\n";
-
-    if (recorder) recorder.start();
+    document.getElementById("out").textContent = finalText + interim;
   };
 
-  recorder.start();
-  setTimeout(() => recorder.stop(), 4000);
+  rec.onerror = (e) => {
+    console.log("error", e);
+  };
+
+  rec.onend = () => {
+    // Auto-restart für "live" Verhalten
+    if (rec) rec.start();
+  };
+
+  rec.start();
 }
 
 function stop() {
-  if (recorder) recorder.stop();
-  recorder = null;
+  if (rec) {
+    rec.onend = null;
+    rec.stop();
+    rec = null;
+  }
 }
 </script>
 
