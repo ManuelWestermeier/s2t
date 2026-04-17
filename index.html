@@ -2,11 +2,11 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Speech to Text (DE)</title>
+<title>Speech-to-Text (DE + Namen Fix)</title>
 <style>
   body { font-family: Arial; padding: 20px; }
   button { padding: 10px 20px; margin-right: 10px; }
-  #output { margin-top: 20px; font-size: 18px; }
+  #output { margin-top: 20px; font-size: 18px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -21,10 +21,28 @@
 <script>
 const output = document.getElementById("output");
 
+// Korrekturliste (anpassen!)
+const corrections = {
+  "manuel westheimer": "Manuel Westermeier",
+  "westermeyer": "Westermeier",
+  "westermayer": "Westermeier",
+  "sebastiane": "Sebastian",
+  "münschen": "München"
+};
+
+function fixText(text) {
+  let result = text;
+  for (const wrong in corrections) {
+    const regex = new RegExp(wrong, "gi");
+    result = result.replace(regex, corrections[wrong]);
+  }
+  return result;
+}
+
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 if (!SpeechRecognition) {
-  output.innerText = "Browser unterstützt keine SpeechRecognition API.";
+  output.innerText = "SpeechRecognition wird nicht unterstützt.";
 } else {
   const recognition = new SpeechRecognition();
 
@@ -36,15 +54,19 @@ if (!SpeechRecognition) {
 
   recognition.onresult = (event) => {
     let interim = "";
+
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const transcript = event.results[i][0].transcript;
+
       if (event.results[i].isFinal) {
         finalText += transcript + " ";
       } else {
         interim += transcript;
       }
     }
-    output.innerText = finalText + interim;
+
+    const fixed = fixText(finalText + interim);
+    output.innerText = fixed;
   };
 
   recognition.onerror = (e) => {
@@ -53,6 +75,7 @@ if (!SpeechRecognition) {
 
   document.getElementById("start").onclick = () => {
     finalText = "";
+    output.innerText = "";
     recognition.start();
   };
 
